@@ -29,6 +29,23 @@ http://localhost:3000
 docker compose -f docker-compose.local.yml up -d --build
 ```
 
+## GitHub Actions 自动部署到阿里云
+
+仓库内的 `Deploy to Aliyun` workflow 会在 `main` 分支收到推送后，在 GitHub Actions 构建 amd64 Docker 镜像并推送到 GHCR，再通过 SSH 通知服务器拉取本次提交对应的镜像并重启容器。
+
+服务器需要提前安装 Docker 和 curl，并允许部署用户执行 Docker 命令。容器默认监听服务器本机的 `127.0.0.1:3001`，可以再通过 Nginx 反向代理到正式域名。
+
+在 GitHub 仓库的 `Settings -> Secrets and variables -> Actions` 中配置：
+
+- Secret `ALIYUN_HOST`：服务器公网 IP 或域名。
+- Secret `ALIYUN_USER`：SSH 登录用户。
+- Secret `ALIYUN_PORT`：SSH 端口，不配置时使用 `22`。
+- Secret `ALIYUN_SSH_PRIVATE_KEY`：用于登录服务器的 SSH 私钥完整内容。
+- Secret `ALIYUN_SSH_KNOWN_HOSTS`：在可信环境执行 `ssh-keyscan -H <服务器地址>` 得到的服务器公钥记录。
+- Variable `ALIYUN_APP_PORT`：可选，服务器本机监听端口，不配置时使用 `3001`。
+
+对应 SSH 公钥需要写入服务器部署用户的 `~/.ssh/authorized_keys`。部署脚本会检查新容器是否可访问；检查失败时会恢复部署前使用的镜像。配置完成后，可以推送到 `main`，或在 GitHub Actions 页面手动运行 `Deploy to Aliyun`。
+
 ## 文档站镜像
 
 文档站位于 `docs/` 目录，按带服务端能力的 Next.js standalone 应用单独构建，不打进主应用镜像。

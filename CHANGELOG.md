@@ -2,6 +2,8 @@
 
 ## Unreleased
 
++ [新增] 新增通过 GitHub Actions 自动部署到阿里云服务器的流程。
+
 ## v0.6.0 - 2026-07-09
 
 + [新增] 新增Codex App插件支持。
