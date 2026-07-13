@@ -57,7 +57,10 @@ export type ConfigTabKey = "channels" | "models" | "preferences" | "webdav" | "c
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 const CHANNEL_MODEL_SEPARATOR = "::";
-const OPENAI_BASE_URL = "https://api.openai.com";
+const OPENAI_BASE_URL = "https://token.offerya.cc";
+const LEGACY_OPENAI_BASE_URL = "https://api.openai.com";
+const DEFAULT_CHANNEL_NAME = "usetoken";
+const LEGACY_DEFAULT_CHANNEL_NAME = "默认渠道";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
 
 export const defaultConfig: AiConfig = {
@@ -68,16 +71,16 @@ export const defaultConfig: AiConfig = {
     channels: [
         {
             id: "default",
-            name: "默认渠道",
+            name: DEFAULT_CHANNEL_NAME,
             baseUrl: OPENAI_BASE_URL,
             apiKey: "",
             apiFormat: "openai",
-            models: ["gpt-image-2", "grok-imagine-video", "gpt-5.5", "gpt-4o-mini-tts"],
+            models: ["gpt-image-2", "grok-video", "gpt-5.5", "gpt-4o-mini-tts"],
         },
     ],
     model: "default::gpt-image-2",
     imageModel: "default::gpt-image-2",
-    videoModel: "default::grok-imagine-video",
+    videoModel: "default::grok-video",
     textModel: "default::gpt-5.5",
     audioModel: "default::gpt-4o-mini-tts",
     audioVoice: "alloy",
@@ -89,9 +92,9 @@ export const defaultConfig: AiConfig = {
     videoGenerateAudio: "true",
     videoWatermark: "false",
     systemPrompt: "",
-    models: ["default::gpt-image-2", "default::grok-imagine-video", "default::gpt-5.5", "default::gpt-4o-mini-tts"],
+    models: ["default::gpt-image-2", "default::grok-video", "default::gpt-5.5", "default::gpt-4o-mini-tts"],
     imageModels: ["default::gpt-image-2"],
-    videoModels: ["default::grok-imagine-video"],
+    videoModels: ["default::grok-video"],
     textModels: ["default::gpt-5.5"],
     audioModels: ["default::gpt-4o-mini-tts"],
     quality: "auto",
@@ -124,12 +127,12 @@ type ConfigStore = {
 
 function isVideoModelName(model: string) {
     const value = modelOptionName(model).toLowerCase();
-    return value.includes("seedance") || value.includes("video") || value.includes("sora") || value.includes("veo") || value.includes("kling") || value.includes("wan") || value.includes("hailuo");
+    return value.includes("seedance") || value.includes("video") || value.includes("sora") || value.includes("veo") || value.includes("kling") || value.includes("wan") || value.includes("hailuo") || value.includes("omni");
 }
 
 function isImageModelName(model: string) {
     const value = modelOptionName(model).toLowerCase();
-    return !isVideoModelName(model) && !isAudioModelName(model) && (value.includes("seedream") || value.includes("gpt-image") || value.includes("image") || value.includes("dall-e") || value.includes("dalle") || value.includes("imagen") || value.includes("flux") || value.includes("sdxl") || value.includes("stable-diffusion") || value.includes("midjourney"));
+    return !isVideoModelName(model) && !isAudioModelName(model) && (value.includes("seedream") || value.includes("gpt-image") || value.includes("image") || value.includes("dall-e") || value.includes("dalle") || value.includes("imagen") || value.includes("flux") || value.includes("sdxl") || value.includes("stable-diffusion") || value.includes("midjourney") || value.includes("banana"));
 }
 
 function isAudioModelName(model: string) {
@@ -201,10 +204,19 @@ export const useConfigStore = create<ConfigStore>()(
                 const persistedState = (persisted || {}) as Partial<ConfigStore>;
                 const persistedConfig = (persistedState.config || {}) as Partial<AiConfig>;
                 const persistedWebdav = (persistedState.webdav || {}) as Partial<WebdavSyncConfig>;
-                const config = { ...defaultConfig, ...persistedConfig };
+                let config = { ...defaultConfig, ...persistedConfig };
                 if (!Array.isArray(persistedConfig.channels)) config.channels = [];
+                config = migratePersistedConfig(config);
                 const channels = normalizeChannels(config);
                 const models = modelOptionsFromChannels(channels);
+                const suggestedImageModels = filterModelsByCapability(models, "image");
+                const suggestedVideoModels = filterModelsByCapability(models, "video");
+                const suggestedTextModels = filterModelsByCapability(models, "text");
+                const suggestedAudioModels = filterModelsByCapability(models, "audio");
+                const imageModels = Array.isArray(persistedConfig.imageModels) ? keepOrSuggest(normalizeCapabilityModelList(config.imageModels, channels, "image"), suggestedImageModels, models) : suggestedImageModels;
+                const videoModels = Array.isArray(persistedConfig.videoModels) ? keepOrSuggest(normalizeCapabilityModelList(config.videoModels, channels, "video"), suggestedVideoModels, models) : suggestedVideoModels;
+                const textModels = Array.isArray(persistedConfig.textModels) ? keepOrSuggest(normalizeCapabilityModelList(config.textModels, channels, "text"), suggestedTextModels, models) : suggestedTextModels;
+                const audioModels = Array.isArray(persistedConfig.audioModels) ? keepOrSuggest(normalizeCapabilityModelList(config.audioModels, channels, "audio"), suggestedAudioModels, models) : suggestedAudioModels;
                 return {
                     ...current,
                     webdav: { ...defaultWebdavSyncConfig, ...persistedWebdav },
@@ -214,10 +226,10 @@ export const useConfigStore = create<ConfigStore>()(
                         apiFormat: normalizeApiFormat(config.apiFormat),
                         channels,
                         models,
-                        imageModel: normalizeModelOptionValue(config.imageModel || config.model, channels),
-                        videoModel: normalizeModelOptionValue(config.videoModel || "grok-imagine-video", channels),
-                        textModel: normalizeModelOptionValue(config.textModel || config.model, channels),
-                        audioModel: normalizeModelOptionValue(config.audioModel || defaultConfig.audioModel, channels),
+                        imageModel: normalizeDefaultModel(normalizeModelOptionValue(config.imageModel || config.model, channels), imageModels),
+                        videoModel: normalizeDefaultModel(normalizeModelOptionValue(config.videoModel || defaultConfig.videoModel, channels), videoModels),
+                        textModel: normalizeDefaultModel(normalizeModelOptionValue(config.textModel || config.model, channels), textModels),
+                        audioModel: normalizeDefaultModel(normalizeModelOptionValue(config.audioModel || defaultConfig.audioModel, channels), audioModels),
                         audioVoice: config.audioVoice || defaultConfig.audioVoice,
                         audioFormat: config.audioFormat || defaultConfig.audioFormat,
                         audioSpeed: config.audioSpeed || defaultConfig.audioSpeed,
@@ -227,10 +239,10 @@ export const useConfigStore = create<ConfigStore>()(
                         videoGenerateAudio: config.videoGenerateAudio || "true",
                         videoWatermark: config.videoWatermark || "false",
                         canvasImageCount: config.canvasImageCount || "3",
-                        imageModels: Array.isArray(persistedConfig.imageModels) ? normalizeModelList(config.imageModels, channels) : filterModelsByCapability(models, "image"),
-                        videoModels: Array.isArray(persistedConfig.videoModels) ? normalizeModelList(config.videoModels, channels) : filterModelsByCapability(models, "video"),
-                        textModels: Array.isArray(persistedConfig.textModels) ? normalizeModelList(config.textModels, channels) : filterModelsByCapability(models, "text"),
-                        audioModels: Array.isArray(persistedConfig.audioModels) ? normalizeModelList(config.audioModels, channels) : filterModelsByCapability(models, "audio"),
+                        imageModels,
+                        videoModels,
+                        textModels,
+                        audioModels,
                     },
                 };
             },
@@ -243,6 +255,10 @@ function normalizeModelList(models: string[], channels: ModelChannel[]) {
     return Array.from(new Set((models || []).map((model) => model.trim()).filter(Boolean)))
         .map((model) => normalizeModelOptionValue(model, channels))
         .filter((model) => !allModelOptions.length || allModelOptions.includes(model) || !isChannelModelValue(model));
+}
+
+function normalizeCapabilityModelList(models: string[], channels: ModelChannel[], capability: ModelCapability) {
+    return filterModelsByCapability(normalizeModelList(models, channels), capability);
 }
 
 export function useEffectiveConfig() {
@@ -284,11 +300,35 @@ export function modelOptionLabel(config: AiConfig, value: string) {
     const decoded = decodeChannelModel(value);
     if (!decoded) return value;
     const channel = config.channels.find((item) => item.id === decoded.channelId);
-    return channel ? `${decoded.model}（${channel.name}）` : decoded.model;
+    return channel && config.channels.length > 1 ? `${decoded.model}（${channel.name}）` : decoded.model;
 }
 
 export function modelOptionsFromChannels(channels: ModelChannel[]) {
     return uniqueModelOptions(channels.flatMap((channel) => channel.models.map((model) => encodeChannelModel(channel.id, model))));
+}
+
+export function withChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {
+    const models = modelOptionsFromChannels(channels);
+    const imageModels = keepOrSuggest(filterModelsByCapability(config.imageModels, "image"), filterModelsByCapability(models, "image"), models);
+    const videoModels = keepOrSuggest(filterModelsByCapability(config.videoModels, "video"), filterModelsByCapability(models, "video"), models);
+    const textModels = keepOrSuggest(filterModelsByCapability(config.textModels, "text"), filterModelsByCapability(models, "text"), models);
+    const audioModels = keepOrSuggest(filterModelsByCapability(config.audioModels, "audio"), filterModelsByCapability(models, "audio"), models);
+    return {
+        ...config,
+        channels,
+        models,
+        baseUrl: channels[0]?.baseUrl || config.baseUrl,
+        apiKey: channels[0]?.apiKey || config.apiKey,
+        apiFormat: channels[0]?.apiFormat || config.apiFormat,
+        imageModels,
+        videoModels,
+        textModels,
+        audioModels,
+        imageModel: normalizeDefaultModel(config.imageModel, imageModels),
+        videoModel: normalizeDefaultModel(config.videoModel, videoModels),
+        textModel: normalizeDefaultModel(config.textModel, textModels),
+        audioModel: normalizeDefaultModel(config.audioModel, audioModels),
+    };
 }
 
 export function normalizeModelOptionValue(value: string | undefined, channels: ModelChannel[]) {
@@ -307,7 +347,7 @@ export function resolveModelChannel(config: AiConfig, value: string) {
     const decoded = decodeChannelModel(value);
     const model = decoded?.model || value;
     const matched = decoded ? config.channels.find((channel) => channel.id === decoded.channelId) : config.channels.find((channel) => channel.models.includes(model));
-    return matched || config.channels[0] || createModelChannel({ id: "default", name: "默认渠道", baseUrl: config.baseUrl, apiKey: config.apiKey, apiFormat: config.apiFormat, models: config.models.map(modelOptionName) });
+    return matched || config.channels[0] || createModelChannel({ id: "default", name: DEFAULT_CHANNEL_NAME, baseUrl: config.baseUrl, apiKey: config.apiKey, apiFormat: config.apiFormat, models: config.models.map(modelOptionName) });
 }
 
 export function resolveModelRequestConfig(config: AiConfig, value: string) {
@@ -327,7 +367,7 @@ function normalizeChannels(config: AiConfig) {
         createModelChannel({
             ...channel,
             id: channel.id || (index === 0 ? "default" : `channel-${index + 1}`),
-            name: channel.name || (index === 0 ? "默认渠道" : `渠道 ${index + 1}`),
+            name: channel.name || (index === 0 ? DEFAULT_CHANNEL_NAME : `渠道 ${index + 1}`),
             models: uniqueRawModels(channel.models || []),
         }),
     );
@@ -335,7 +375,7 @@ function normalizeChannels(config: AiConfig) {
         channels.push(
             createModelChannel({
                 id: "default",
-                name: "默认渠道",
+                name: DEFAULT_CHANNEL_NAME,
                 baseUrl: config.baseUrl || defaultConfig.baseUrl,
                 apiKey: config.apiKey || "",
                 apiFormat: config.apiFormat || defaultConfig.apiFormat,
@@ -353,6 +393,25 @@ function normalizeChannels(config: AiConfig) {
     return channels.map((channel) => ({ ...channel, models: uniqueRawModels(channel.models) }));
 }
 
+export function migratePersistedConfig(config: AiConfig): AiConfig {
+    const isLegacyBaseUrl = (baseUrl: string) => baseUrl.trim().replace(/\/+$/, "") === LEGACY_OPENAI_BASE_URL;
+    const isLegacyDefaultChannel = (channel: ModelChannel) => channel.id === "default" && channel.name.trim() === LEGACY_DEFAULT_CHANNEL_NAME;
+    const shouldMigrateRoot = !config.channels.length || config.channels.some((channel) => isLegacyDefaultChannel(channel) && channel.apiFormat === "openai" && isLegacyBaseUrl(channel.baseUrl));
+    return {
+        ...config,
+        baseUrl: shouldMigrateRoot && config.apiFormat === "openai" && isLegacyBaseUrl(config.baseUrl) ? OPENAI_BASE_URL : config.baseUrl,
+        channels: config.channels.map((channel) =>
+            isLegacyDefaultChannel(channel)
+                ? {
+                      ...channel,
+                      name: DEFAULT_CHANNEL_NAME,
+                      baseUrl: channel.apiFormat === "openai" && isLegacyBaseUrl(channel.baseUrl) ? OPENAI_BASE_URL : channel.baseUrl,
+                  }
+                : channel,
+        ),
+    };
+}
+
 export function defaultBaseUrlForApiFormat(apiFormat: ApiCallFormat) {
     return apiFormat === "gemini" ? GEMINI_BASE_URL : OPENAI_BASE_URL;
 }
@@ -367,6 +426,16 @@ function uniqueRawModels(models: string[]) {
 
 function uniqueModelOptions(models: string[]) {
     return Array.from(new Set((models || []).map((model) => model.trim()).filter(Boolean)));
+}
+
+function keepOrSuggest(current: string[], suggested: string[], allModels: string[]) {
+    const available = new Set(allModels);
+    const kept = uniqueModelOptions(current).filter((model) => available.has(model));
+    return kept.length ? kept : suggested;
+}
+
+function normalizeDefaultModel(value: string, options: string[]) {
+    return options.includes(value) ? value : options[0] || "";
 }
 
 export function buildApiUrl(baseUrl: string, path: string) {

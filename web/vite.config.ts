@@ -22,4 +22,12 @@ export default defineConfig({
         __APP_VERSION__: JSON.stringify(localVersion),
         __APP_RELEASES__: JSON.stringify(parseChangelog(localChangelog)),
     },
+    server: {
+        proxy: {
+            "/api/pricing": {
+                target: "https://token.offerya.cc",
+                changeOrigin: true,
+            },
+        },
+    },
 });

@@ -3,5 +3,8 @@
   "installCommand": "cd web && bun install",
   "buildCommand": "cd web && bun run build",
   "outputDirectory": "web/dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/api/pricing", "destination": "https://token.offerya.cc/api/pricing" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
