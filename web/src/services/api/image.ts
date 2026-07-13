@@ -4,6 +4,7 @@ import { buildApiUrl, resolveModelRequestConfig, type AiConfig, type ModelChanne
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
+import { fixedImageModelResolution, imageSizeRatio } from "@/lib/image-model-resolution";
 import { imageToDataUrl } from "@/services/image-storage";
 import type { ReferenceImage } from "@/types/image";
 
@@ -184,11 +185,12 @@ function resolveRequestSize(quality: string | undefined, size: string) {
 }
 
 function resolveGeminiImageConfig(config: AiConfig) {
-    const value = config.size.trim();
+    const fixedResolution = fixedImageModelResolution(config.model || config.imageModel);
+    const value = (fixedResolution ? imageSizeRatio(config.size) || "auto" : config.size).trim();
     const dimensions = parseImageDimensions(value);
     const ratio = dimensions ? `${dimensions.width}:${dimensions.height}` : value;
     const aspectRatio = value && value.toLowerCase() !== "auto" ? closestGeminiAspectRatio(ratio) : undefined;
-    const imageSize = supportsGeminiImageSize(config.model) ? resolveGeminiImageSize(config.quality, dimensions) : undefined;
+    const imageSize = supportsGeminiImageSize(config.model) ? fixedResolution?.label || resolveGeminiImageSize(config.quality, dimensions) : undefined;
     const image = { ...(aspectRatio ? { aspectRatio } : {}), ...(imageSize ? { imageSize } : {}) };
     return Object.keys(image).length ? { responseFormat: { image } } : {};
 }
@@ -658,8 +660,9 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
             throw new Error(readAxiosError(error, "请求失败"));
         }
     }
-    const quality = normalizeQuality(config.quality);
-    const requestSize = resolveRequestSize(quality, config.size);
+    const fixedResolution = fixedImageModelResolution(requestConfig.model);
+    const quality = fixedResolution ? undefined : normalizeQuality(config.quality);
+    const requestSize = resolveRequestSize(fixedResolution?.quality || quality, fixedResolution ? imageSizeRatio(config.size) || "auto" : config.size);
     try {
         const response = await axios.post<ImageApiResponse>(
             aiApiUrl(requestConfig, "/images/generations"),
@@ -696,8 +699,9 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
             throw new Error(readAxiosError(error, "请求失败"));
         }
     }
-    const quality = normalizeQuality(config.quality);
-    const requestSize = resolveRequestSize(quality, config.size);
+    const fixedResolution = fixedImageModelResolution(requestConfig.model);
+    const quality = fixedResolution ? undefined : normalizeQuality(config.quality);
+    const requestSize = resolveRequestSize(fixedResolution?.quality || quality, fixedResolution ? imageSizeRatio(config.size) || "auto" : config.size);
     const formData = new FormData();
     formData.set("model", requestConfig.model);
     formData.set("prompt", withSystemPrompt(requestConfig, requestPrompt));

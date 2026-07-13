@@ -4,6 +4,7 @@ import { dataUrlToFile } from "@/lib/image-utils";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
+import { fixedVideoModelResolution } from "@/lib/video-model-resolution";
 import { buildApiUrl, modelOptionName, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
@@ -83,12 +84,13 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
 }
 
 async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
+    const fixedResolution = fixedVideoModelResolution(modelOptionName(model));
     const body = new FormData();
     body.append("model", modelOptionName(model));
     body.append("prompt", prompt);
     body.append("seconds", normalizeVideoSeconds(config.videoSeconds));
     if (normalizeVideoSize(config.size)) body.append("size", normalizeVideoSize(config.size)!);
-    body.append("resolution_name", normalizeVideoResolution(config.vquality));
+    body.append("resolution_name", fixedResolution?.value || normalizeVideoResolution(config.vquality));
     body.append("preset", "normal");
     const files = await Promise.all(references.slice(0, 7).map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
     files.forEach((file) => body.append("input_reference[]", file));
@@ -126,11 +128,12 @@ async function createSeedanceTask(config: AiConfig, model: string, prompt: strin
     assertSeedanceAudioReferences(audioReferences);
     const content = await buildSeedanceContent(config, prompt, references, videoReferences, audioReferences);
     if (!content.length) throw new Error("请输入视频提示词，或连接参考图片/视频/音频");
+    const fixedResolution = fixedVideoModelResolution(modelOptionName(model));
     const payload = {
         model: modelOptionName(model),
         content,
         ratio: normalizeSeedanceRatio(config.size),
-        resolution: normalizeSeedanceResolution(config.vquality, modelOptionName(model)),
+        resolution: fixedResolution?.value || normalizeSeedanceResolution(config.vquality, modelOptionName(model)),
         duration: normalizeSeedanceDuration(config.videoSeconds),
         generate_audio: boolConfig(config.videoGenerateAudio, true),
         watermark: boolConfig(config.videoWatermark, false),
