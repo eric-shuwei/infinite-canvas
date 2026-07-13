@@ -1,5 +1,7 @@
 import localforage from "localforage";
 
+import { extractPromptImages } from "@/lib/prompt-images";
+
 export type Prompt = {
     id: string;
     title: string;
@@ -34,7 +36,7 @@ const youMindGptImage2RawBase = "https://raw.githubusercontent.com/YouMind-OpenL
 const youMindNanoBananaProRawBase = "https://raw.githubusercontent.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts/main";
 const davidWuGptImage2RawBase = "https://raw.githubusercontent.com/davidwuw0811-boop/awesome-gpt-image2-prompts/main";
 const cacheTtlMs = 1000 * 60 * 60;
-const promptCacheKey = "third-party-prompts";
+const promptCacheKey = "third-party-prompts-v2";
 const promptCacheStore = localforage.createInstance({ name: "infinite-canvas", storeName: "prompt_cache" });
 
 const categories: PromptCategory[] = [
@@ -107,7 +109,7 @@ async function buildAwesomeGptImagePrompts() {
             const title = firstMatch(block, /^###\s+(.+)$/m).replace(/\[([^\]]+)]\([^)]+\)/g, "$1").trim();
             const prompt = firstMatch(block, /\*\*提示词:\*\*\s*\r?\n\s*```[\w-]*\r?\n(.*?)\r?\n```/s).trim();
             if (!title || !prompt) continue;
-            const images = extractMarkdownImages(awesomeGptImageRawBase, block);
+            const images = extractPromptImages(awesomeGptImageRawBase, block);
             items.push(defaultPrompt(`awesome-gpt-image-${leftPad(items.length + 1)}`, title, prompt, images[0] || "", tags, markdownPreview(images)));
         }
     }
@@ -121,7 +123,7 @@ async function buildAwesomeGpt4oImagePrompts() {
         const title = firstMatch(block, /^###\s+(.+)$/m).trim();
         const prompt = firstMatch(block, /- \*\*提示词文本：\*\*\s*`(.*?)`/s).trim();
         if (!title || !prompt) continue;
-        const images = extractMarkdownImages(awesomeGpt4oImagePromptsBase, block);
+        const images = extractPromptImages(awesomeGpt4oImagePromptsBase, block);
         items.push(defaultPrompt(`awesome-gpt4o-image-prompts-${leftPad(items.length + 1)}`, title, prompt, images[0] || "", ["gpt4o"], markdownPreview(images)));
     }
     return items;
@@ -134,7 +136,7 @@ async function buildYouMindPrompts(baseUrl: string, idPrefix: string, modelTag: 
         const title = firstMatch(block, /^###\s+No\.\s*\d+:\s*(.+)$/m).trim();
         const prompt = firstMatch(block, /#### .*?提示词\s*\r?\n\s*```[\w-]*\r?\n(.*?)\r?\n```/s).trim();
         if (!title || !prompt) continue;
-        const images = extractMarkdownImages(baseUrl, block);
+        const images = extractPromptImages(baseUrl, block);
         items.push(defaultPrompt(`${idPrefix}-${leftPad(items.length + 1)}`, title, prompt, images[0] || "", youMindTags(title, modelTag), markdownPreview(images)));
     }
     return items;
@@ -184,10 +186,6 @@ function splitBeforeHeading(markdown: string, prefix: string) {
 
 function firstMatch(value: string, pattern: RegExp) {
     return pattern.exec(value)?.[1] || "";
-}
-
-function extractMarkdownImages(baseUrl: string, markdown: string) {
-    return Array.from(markdown.matchAll(/!\[[^\]]*]\(([^)]+)\)/g), (match) => absoluteImage(baseUrl, match[1])).filter(Boolean);
 }
 
 function absoluteImage(baseUrl: string, image: string) {

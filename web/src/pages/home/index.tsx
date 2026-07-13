@@ -1,5 +1,5 @@
-import { ArrowRight } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { ArrowRight, Image as ImageIcon } from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { App, Button, Image, Tag } from "antd";
 import { useNavigate } from "react-router-dom";
 
@@ -25,13 +25,26 @@ export default function IndexPage() {
     const navigate = useNavigate();
     const [primaryTool] = navigationTools;
     const [promptShowcase, setPromptShowcase] = useState<Prompt[]>([]);
+    const [promptsLoading, setPromptsLoading] = useState(true);
     const [previewIndex, setPreviewIndex] = useState(0);
     const [previewOpen, setPreviewOpen] = useState(false);
+    const previewItems = useMemo(() => promptShowcase.filter((item) => item.coverUrl), [promptShowcase]);
 
     useEffect(() => {
+        let active = true;
         void fetchPrompts({ pageSize: 12 })
-            .then((data) => setPromptShowcase(data.items))
-            .catch((error) => message.error(error instanceof Error ? error.message : "获取提示词失败"));
+            .then((data) => {
+                if (active) setPromptShowcase(data.items);
+            })
+            .catch((error) => {
+                if (active) message.error(error instanceof Error ? error.message : "获取提示词失败");
+            })
+            .finally(() => {
+                if (active) setPromptsLoading(false);
+            });
+        return () => {
+            active = false;
+        };
     }, [message]);
 
     return (
@@ -40,7 +53,7 @@ export default function IndexPage() {
                 <div className="pointer-events-none absolute left-[15%] top-24 size-20 rounded-full border border-dashed border-stone-200 dark:border-stone-800" />
                 <div className="pointer-events-none absolute right-[23%] top-[48%] size-20 rounded-full border border-dashed border-stone-200 dark:border-stone-800" />
 
-                <div className="relative flex min-h-[620px] flex-col items-center justify-center pt-10 text-center">
+                <div className="relative flex min-h-[520px] flex-col items-center justify-center pt-10 text-center sm:min-h-[560px] lg:min-h-[580px]">
                     <h1 className="ai-title-aurora max-w-5xl text-balance text-5xl font-semibold tracking-normal sm:text-7xl lg:text-8xl">无限画布</h1>
                     <p className="mt-8 max-w-3xl text-balance text-lg leading-8 text-stone-500 dark:text-stone-400">
                         在
@@ -75,34 +88,44 @@ export default function IndexPage() {
                         </Button>
                     </div>
                     <div className="grid auto-rows-[210px] gap-4 md:grid-cols-4">
-                        {promptShowcase.map((item, index) => (
-                            <button
-                                key={item.id}
-                                type="button"
-                                onClick={() => {
-                                    setPreviewIndex(index);
-                                    setPreviewOpen(true);
-                                }}
-                                className={cn(
-                                    "group relative cursor-pointer overflow-hidden border border-stone-200 bg-stone-100 text-left dark:border-stone-800 dark:bg-stone-900",
-                                    index === 0 && "md:col-span-2 md:row-span-2",
-                                    index === 3 && "md:col-span-2",
-                                )}
-                            >
-                                <img src={item.coverUrl} alt={item.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" />
-                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/35 to-transparent p-4 text-white">
-                                    <div className="mb-2 flex flex-wrap gap-1.5">
-                                        {item.tags.slice(0, 2).map((tag) => (
-                                            <Tag key={tag} variant="filled" className="m-0 bg-white/15 text-[11px] text-white backdrop-blur">
-                                                {tag}
-                                            </Tag>
-                                        ))}
-                                    </div>
-                                    <h3 className="text-sm font-medium">{item.title}</h3>
-                                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/75">{item.prompt}</p>
-                                </div>
-                            </button>
-                        ))}
+                        {promptsLoading
+                            ? Array.from({ length: 8 }, (_, index) => <div key={index} className={cn("animate-pulse bg-stone-200 dark:bg-stone-800", index === 0 && "md:col-span-2 md:row-span-2", index === 3 && "md:col-span-2")} />)
+                            : promptShowcase.map((item, index) => (
+                                  <button
+                                      key={item.id}
+                                      type="button"
+                                      onClick={() => {
+                                          if (!item.coverUrl) return;
+                                          setPreviewIndex(previewItems.findIndex((previewItem) => previewItem.id === item.id));
+                                          setPreviewOpen(true);
+                                      }}
+                                      className={cn(
+                                          "group relative overflow-hidden border border-stone-200 bg-stone-100 text-left dark:border-stone-800 dark:bg-stone-900",
+                                          item.coverUrl ? "cursor-pointer" : "cursor-default",
+                                          index === 0 && "md:col-span-2 md:row-span-2",
+                                          index === 3 && "md:col-span-2",
+                                      )}
+                                  >
+                                      {item.coverUrl ? (
+                                          <img src={item.coverUrl} alt={item.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" />
+                                      ) : (
+                                          <div className="flex h-full w-full items-center justify-center text-stone-400 dark:text-stone-600">
+                                              <ImageIcon className="size-10" />
+                                          </div>
+                                      )}
+                                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/35 to-transparent p-4 text-white">
+                                          <div className="mb-2 flex flex-wrap gap-1.5">
+                                              {item.tags.slice(0, 2).map((tag) => (
+                                                  <Tag key={tag} variant="filled" className="m-0 bg-white/15 text-[11px] text-white backdrop-blur">
+                                                      {tag}
+                                                  </Tag>
+                                              ))}
+                                          </div>
+                                          <h3 className="text-sm font-medium">{item.title}</h3>
+                                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/75">{item.prompt}</p>
+                                      </div>
+                                  </button>
+                              ))}
                     </div>
                 </section>
             </section>
@@ -115,7 +138,7 @@ export default function IndexPage() {
                 }}
             >
                 <div className="hidden">
-                    {promptShowcase.map((item) => (
+                    {previewItems.map((item) => (
                         <Image key={item.id} src={item.coverUrl} alt={item.title} />
                     ))}
                 </div>

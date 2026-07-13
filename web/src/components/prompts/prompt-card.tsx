@@ -1,4 +1,4 @@
-import { Copy } from "lucide-react";
+import { Copy, Image as ImageIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button, Card, Tag } from "antd";
 
@@ -28,7 +28,13 @@ export function PromptCard({
             styles={{ body: { padding: 0 } }}
             cover={
                 <button type="button" className="block w-full text-left" onClick={onOpen}>
-                    <img src={item.coverUrl} alt={item.title} className="aspect-[4/3] w-full object-cover" />
+                    {item.coverUrl ? (
+                        <img src={item.coverUrl} alt={item.title} className="aspect-[4/3] w-full object-cover" />
+                    ) : (
+                        <div className="flex aspect-[4/3] w-full items-center justify-center bg-stone-100 text-stone-400 dark:bg-stone-900 dark:text-stone-600">
+                            <ImageIcon className="size-10" />
+                        </div>
+                    )}
                 </button>
             }
         >
