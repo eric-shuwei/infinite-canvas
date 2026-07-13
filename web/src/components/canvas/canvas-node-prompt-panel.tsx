@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowUp, LoaderCircle, Square } from "lucide-react";
+import { ArrowUp, FileText, Image as ImageIcon, LoaderCircle, Music2, Square, Video } from "lucide-react";
 import { Button } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
@@ -36,7 +36,9 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const hasTextContent = node.type === CanvasNodeType.Text && Boolean(node.metadata?.content?.trim());
     const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
     const isEditingExistingContent = hasTextContent || hasImageContent;
+    const activeReferences = mentionReferences.filter((reference) => reference.active);
     const [prompt, setPrompt] = useState(isEditingExistingContent ? "" : node.metadata?.prompt || "");
+    const [promptFocused, setPromptFocused] = useState(false);
 
     useEffect(() => {
         setPrompt(isEditingExistingContent ? "" : node.metadata?.prompt || "");
@@ -62,13 +64,22 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
             onPointerDown={(event) => event.stopPropagation()}
             onWheel={(event) => event.stopPropagation()}
         >
+            {activeReferences.length ? <ConnectedReferenceList references={activeReferences} theme={theme} /> : null}
             <CanvasResourceMentionTextarea
                 value={prompt}
                 references={mentionReferences}
                 onChange={updatePrompt}
                 onSubmit={submit}
+                onFocus={() => setPromptFocused(true)}
+                onBlur={() => setPromptFocused(false)}
                 className="thin-scrollbar h-24 w-full resize-none rounded-xl border px-3 py-2 text-sm leading-5 outline-none"
-                style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }}
+                style={{
+                    background: theme.node.fill,
+                    borderColor: promptFocused ? theme.node.activeStroke : theme.node.stroke,
+                    boxShadow: promptFocused ? `0 0 0 2px ${theme.canvas.selectionFill}` : undefined,
+                    color: theme.node.text,
+                    transition: "border-color 150ms ease, box-shadow 150ms ease",
+                }}
                 placeholder={promptPlaceholder(mode, hasImageContent, hasTextContent)}
             />
 
@@ -123,6 +134,41 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                 </Button>
             </div>
         </div>
+    );
+}
+
+function ConnectedReferenceList({ references, theme }: { references: CanvasResourceReference[]; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
+    return (
+        <div className="mb-2 flex min-w-0 items-center gap-2">
+            <span className="shrink-0 text-[11px]" style={{ color: theme.node.muted }}>
+                引用素材
+            </span>
+            <div className="thin-scrollbar flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
+                {references.map((reference) => (
+                    <div
+                        key={reference.id}
+                        className="flex h-8 max-w-36 shrink-0 items-center gap-1.5 rounded-lg border px-1.5 text-[11px]"
+                        style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }}
+                        title={`${reference.label} · ${reference.title}`}
+                    >
+                        <ConnectedReferencePreview reference={reference} theme={theme} />
+                        <span className="shrink-0 font-medium">{reference.label}</span>
+                        <span className="truncate opacity-60">{reference.title}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function ConnectedReferencePreview({ reference, theme }: { reference: CanvasResourceReference; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
+    if (reference.kind === "image" && reference.previewUrl) return <img src={reference.previewUrl} alt="" className="size-5 shrink-0 rounded object-cover" />;
+    if (reference.kind === "video" && reference.previewUrl) return <video src={reference.previewUrl} className="size-5 shrink-0 rounded object-cover" muted preload="metadata" />;
+    const Icon = reference.kind === "audio" ? Music2 : reference.kind === "video" ? Video : reference.kind === "image" ? ImageIcon : FileText;
+    return (
+        <span className="grid size-5 shrink-0 place-items-center rounded" style={{ background: theme.toolbar.activeBg }}>
+            <Icon className="size-3" />
+        </span>
     );
 }
 
