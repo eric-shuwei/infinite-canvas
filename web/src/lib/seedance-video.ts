@@ -139,14 +139,19 @@ export function seedanceReferenceLabel(kind: "image" | "video" | "audio", index:
 }
 
 export function buildSeedancePromptText(prompt: string, images: ReferenceImage[], videos: ReferenceVideo[], audios: ReferenceAudio[]) {
-    const labels = [
-        ...images.map((_, index) => seedanceReferenceLabel("image", index)),
-        ...videos.map((_, index) => seedanceReferenceLabel("video", index)),
-        ...audios.map((_, index) => seedanceReferenceLabel("audio", index)),
-    ];
-    const text = prompt.trim();
+    const labels = [...images.map((_, index) => `@image${index + 1}`), ...videos.map((_, index) => `@video${index + 1}`), ...audios.map((_, index) => `@audio${index + 1}`)];
+    let text = prompt.trim();
+    images.forEach((_, index) => {
+        text = text.replaceAll(seedanceReferenceLabel("image", index), `@image${index + 1}`);
+    });
+    videos.forEach((_, index) => {
+        text = text.replaceAll(seedanceReferenceLabel("video", index), `@video${index + 1}`);
+    });
+    audios.forEach((_, index) => {
+        text = text.replaceAll(seedanceReferenceLabel("audio", index), `@audio${index + 1}`);
+    });
     if (!labels.length) return text;
-    return `参考素材编号：${labels.join("、")}。请按这些编号理解提示词中的图片、视频和音频引用。\n\n${text}`;
+    return `参考素材编号：${labels.join("、")}。\n\n${text}`;
 }
 
 export function seedanceVideoReferenceError(videos: ReferenceVideo[]) {

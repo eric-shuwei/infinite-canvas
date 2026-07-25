@@ -35,6 +35,7 @@ type GeneratedVideo = {
 type GenerationResult = {
     id: string;
     status: "pending" | "success" | "failed";
+    progress?: number;
     video?: GeneratedVideo;
     error?: string;
 };
@@ -311,6 +312,7 @@ export default function VideoPage() {
                     return;
                 }
                 if (state.status === "failed") throw new Error(state.error);
+                if (state.progress !== undefined) setResults((value) => value.map((item) => (item.status === "pending" ? { ...item, progress: state.progress } : item)));
                 if (attempt === 119) throw new Error("视频生成超时，请稍后重试");
                 await delay(log.task.provider === "seedance" ? 5000 : 2500);
             }
@@ -484,7 +486,7 @@ export default function VideoPage() {
                         </div>
                         {results.length ? (
                             <div className="grid gap-4">
-                                {results.map((result) => (result.status === "success" && result.video ? <ResultVideoCard key={result.id} video={result.video} onDownload={downloadVideo} onSaveAsset={saveResultToAssets} /> : result.status === "failed" ? <FailedVideoCard key={result.id} error={result.error || "生成失败"} onRetry={retryResult} /> : <PendingVideoCard key={result.id} />))}
+                                {results.map((result) => (result.status === "success" && result.video ? <ResultVideoCard key={result.id} video={result.video} onDownload={downloadVideo} onSaveAsset={saveResultToAssets} /> : result.status === "failed" ? <FailedVideoCard key={result.id} error={result.error || "生成失败"} onRetry={retryResult} /> : <PendingVideoCard key={result.id} progress={result.progress} />))}
                             </div>
                         ) : (
                             <div className="flex min-h-[320px] flex-col items-center justify-center rounded-lg border border-dashed border-stone-300 text-center dark:border-stone-700 lg:min-h-[560px]">
@@ -564,12 +566,17 @@ function ResultVideoCard({ video, onDownload, onSaveAsset }: { video: GeneratedV
     );
 }
 
-function PendingVideoCard() {
+function PendingVideoCard({ progress }: { progress?: number }) {
     return (
         <div className="relative aspect-video overflow-hidden rounded-lg border border-dashed border-stone-300 bg-stone-50 dark:border-stone-700 dark:bg-stone-900">
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-stone-500 dark:text-stone-400">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-sm text-stone-500 dark:text-stone-400">
                 <LoaderCircle className="size-6 animate-spin" />
-                <span>生成中</span>
+                <span>{progress !== undefined ? `生成中 ${progress}%` : "生成中"}</span>
+                {progress !== undefined ? (
+                    <div className="h-1.5 w-40 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800">
+                        <div className="h-full rounded-full bg-stone-900 transition-[width] duration-300 dark:bg-stone-100" style={{ width: `${progress}%` }} />
+                    </div>
+                ) : null}
             </div>
         </div>
     );
