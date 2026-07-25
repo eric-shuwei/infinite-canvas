@@ -3,7 +3,7 @@ import axios from "axios";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
-import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
+import { boolConfig, buildSeedancePromptText, isSeedanceVideoModel, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoApiMode, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { fixedVideoModelResolution } from "@/lib/video-model-resolution";
 import { buildApiUrl, modelOptionName, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
@@ -56,8 +56,11 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     const selectedModel = (config.model || config.videoModel).trim();
     const requestConfig = resolveModelRequestConfig(config, selectedModel);
     assertVideoConfig(requestConfig, requestConfig.model);
-    if (isSeedanceVideoConfig(requestConfig)) {
+    if (seedanceVideoApiMode(requestConfig) === "ark-plan") {
         return createSeedanceTask(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
+    }
+    if (isSeedanceVideoModel(modelOptionName(selectedModel))) {
+        return createOpenAISeedanceTask(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     }
     if (videoReferences.length || audioReferences.length) {
         throw new Error("当前视频接口不支持参考视频或参考音频，请切换到 Seedance 2.0 / 火山 Agent Plan 模型，或移除参考素材");
@@ -121,6 +124,34 @@ async function pollOpenAIVideoTask(config: AiConfig, task: VideoGenerationTask, 
 }
 
 async function createSeedanceTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], options?: RequestOptions): Promise<VideoGenerationTask> {
+    const payload = await buildSeedanceTaskPayload(config, model, prompt, references, videoReferences, audioReferences);
+    try {
+        const created = unwrapSeedanceTask((await axios.post<ApiEnvelope<SeedanceTask>>(seedanceApiUrl(config), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal })).data);
+        if (!created.id) throw new Error("Seedance 接口没有返回任务 ID");
+        return { id: created.id, provider: "seedance", model };
+    } catch (error) {
+        throw new Error(readAxiosError(error, "Seedance 任务创建失败"));
+    }
+}
+
+async function createOpenAISeedanceTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], options?: RequestOptions): Promise<VideoGenerationTask> {
+    const payload = await buildSeedanceTaskPayload(config, model, prompt, references, videoReferences, audioReferences);
+    const body = {
+        model: payload.model,
+        prompt: buildSeedancePromptText(prompt, references, videoReferences, audioReferences),
+        ...(payload.duration > 0 ? { seconds: String(payload.duration) } : {}),
+        metadata: payload,
+    };
+    try {
+        const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), body, { headers: aiHeaders(config, "application/json"), signal: options?.signal })).data);
+        if (!created.id) throw new Error("视频接口没有返回任务 ID");
+        return { id: created.id, provider: "openai", model };
+    } catch (error) {
+        throw new Error(readAxiosError(error, "Seedance 任务创建失败"));
+    }
+}
+
+async function buildSeedanceTaskPayload(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[]) {
     if (audioReferences.length && !references.length && !videoReferences.length) {
         throw new Error("Seedance 参考音频不能单独使用，请同时添加参考图或参考视频");
     }
@@ -129,7 +160,7 @@ async function createSeedanceTask(config: AiConfig, model: string, prompt: strin
     const content = await buildSeedanceContent(config, prompt, references, videoReferences, audioReferences);
     if (!content.length) throw new Error("请输入视频提示词，或连接参考图片/视频/音频");
     const fixedResolution = fixedVideoModelResolution(modelOptionName(model));
-    const payload = {
+    return {
         model: modelOptionName(model),
         content,
         ratio: normalizeSeedanceRatio(config.size),
@@ -138,14 +169,6 @@ async function createSeedanceTask(config: AiConfig, model: string, prompt: strin
         generate_audio: boolConfig(config.videoGenerateAudio, true),
         watermark: boolConfig(config.videoWatermark, false),
     };
-
-    try {
-        const created = unwrapSeedanceTask((await axios.post<ApiEnvelope<SeedanceTask>>(seedanceApiUrl(config), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal })).data);
-        if (!created.id) throw new Error("Seedance 接口没有返回任务 ID");
-        return { id: created.id, provider: "seedance", model };
-    } catch (error) {
-        throw new Error(readAxiosError(error, "Seedance 任务创建失败"));
-    }
 }
 
 async function pollSeedanceTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {

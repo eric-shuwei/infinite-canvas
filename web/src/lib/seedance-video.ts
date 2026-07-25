@@ -61,6 +61,11 @@ export function isSeedanceVideoConfig(config: AiConfig | Pick<AiConfig, "model" 
     return isSeedanceVideoModel(modelOptionName(requestConfig.model || requestConfig.videoModel)) || isArkPlanBaseUrl(requestConfig.baseUrl);
 }
 
+export function seedanceVideoApiMode(config: AiConfig | Pick<AiConfig, "model" | "videoModel" | "baseUrl">): "ark-plan" | "openai" {
+    const requestConfig = "channels" in config ? resolveModelRequestConfig(config, config.model || config.videoModel) : config;
+    return isArkPlanBaseUrl(requestConfig.baseUrl) ? "ark-plan" : "openai";
+}
+
 export function isSeedanceVideoModel(model: string) {
     const value = model.toLowerCase();
     return value.includes("seedance") || value.includes("doubao-seedance");
