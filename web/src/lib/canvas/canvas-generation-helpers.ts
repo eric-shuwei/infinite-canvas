@@ -48,7 +48,7 @@ export async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
             const content = node.metadata?.content;
             if ((node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) && node.metadata?.storageKey) return { ...node, metadata: { ...node.metadata, content: await resolveMediaUrl(node.metadata.storageKey, content) } };
             if (node.type !== CanvasNodeType.Image || !content) return node;
-            const images = await Promise.all((node.metadata.images || []).map(async (image) => (image.content ? { ...image, content: await resolveImageUrl(image.storageKey, image.content) } : image)));
+            const images = await Promise.all((node.metadata?.images || []).map(async (image) => (image.content ? { ...image, content: await resolveImageUrl(image.storageKey, image.content) } : image)));
             if (node.metadata?.storageKey) return { ...node, metadata: { ...node.metadata, content: await resolveImageUrl(node.metadata.storageKey, content), images } };
             if (!content.startsWith("data:image/")) return node;
             return { ...node, metadata: { ...node.metadata, ...imageMetadata(await uploadImage(content)) } };
@@ -112,19 +112,20 @@ export function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | u
 }
 
 export function resetInterruptedGeneration(nodes: CanvasNodeData[]) {
-    return nodes.map((node) =>
-        node.metadata?.status === "loading"
-            ? {
-                  ...node,
-                  metadata: {
-                      ...node.metadata,
-                      status: "error" as const,
-                      errorDetails: i18n.t("canvas.generation.interrupted"),
-                      images: node.metadata.images?.map((image) => (image.status === "loading" ? { ...image, status: "error" as const, errorDetails: i18n.t("canvas.generation.interrupted") } : image)),
-                  },
-              }
-            : node,
-    );
+    return nodes.map((node) => {
+        const rootInterrupted = node.metadata?.status === "loading";
+        const hasInterruptedImages = node.metadata?.images?.some((image) => image.status === "loading");
+        if (!rootInterrupted && !hasInterruptedImages) return node;
+        const errorDetails = i18n.t("canvas.generation.interrupted");
+        return {
+            ...node,
+            metadata: {
+                ...node.metadata,
+                ...(rootInterrupted ? { status: "error" as const, errorDetails } : {}),
+                images: hasInterruptedImages ? node.metadata?.images?.map((image) => (image.status === "loading" ? { ...image, status: "error" as const, errorDetails } : image)) : node.metadata?.images,
+            },
+        };
+    });
 }
 
 export function isGenerationCanceled(error: unknown) {

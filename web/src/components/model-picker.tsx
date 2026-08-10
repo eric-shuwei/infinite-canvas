@@ -4,8 +4,10 @@ import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { useModelPricing } from "@/hooks/use-model-pricing";
+import { formatModelPrice, resolveModelPricing, type ChannelPricingMap } from "@/lib/model-pricing";
 import { cn } from "@/lib/utils";
-import { modelOptionLabel, modelOptionName, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { modelCapabilityOf, modelOptionLabel, modelOptionName, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 
 type ModelPickerProps = {
     config: AiConfig;
@@ -22,9 +24,11 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
     const { t } = useTranslation();
     const pickerId = useId();
     const [open, setOpen] = useState(false);
+    const { data: pricing = {} } = useModelPricing(config);
     const options = useMemo(() => Array.from(new Set([...(config.channelMode === "local" && !capability ? [value] : []), ...selectableModelsByCapability(config, capability)].filter((model): model is string => Boolean(model)))), [capability, config, value]);
     const current = value || "";
     const pickerPlaceholder = placeholder || t("settingsPanels.model.select");
+    const currentPrice = formatModelPrice(resolveModelPricing(config, current, pricing), capability || modelCapabilityOf(config, current));
 
     useEffect(() => {
         const closeOtherPicker = (event: Event) => {
@@ -58,6 +62,7 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
             >
                 <ModelIcon model={current} />
                 <span className="canvas-model-picker-text min-w-0 flex-1 truncate text-left">{current ? modelOptionLabel(config, current) : pickerPlaceholder}</span>
+                {currentPrice ? <span className="shrink-0 text-[11px] opacity-60">· {currentPrice}</span> : null}
             </SelectTrigger>
             <SelectContent
                 data-canvas-no-zoom
@@ -72,7 +77,7 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
                 {options.length ? (
                     options.map((model) => (
                         <SelectItem key={model} value={model} textValue={modelOptionLabel(config, model)}>
-                            <ModelLabel config={config} model={model} />
+                            <ModelLabel config={config} model={model} pricing={pricing} />
                         </SelectItem>
                     ))
                 ) : (
@@ -91,11 +96,13 @@ function emptyModelLabel(config: AiConfig, capability?: ModelCapability) {
     return config.models.length ? i18n.t("settingsPanels.model.noMatch", { capability: label }) : i18n.t("settingsPanels.model.addFirst");
 }
 
-function ModelLabel({ config, model }: { config: AiConfig; model: string }) {
+function ModelLabel({ config, model, pricing }: { config: AiConfig; model: string; pricing: ChannelPricingMap }) {
+    const price = formatModelPrice(resolveModelPricing(config, model, pricing), modelCapabilityOf(config, model));
     return (
-        <span className="flex min-w-0 items-center gap-2">
+        <span className="flex min-w-0 flex-1 items-center gap-2">
             <ModelIcon model={model} />
-            <span className="truncate">{modelOptionLabel(config, model)}</span>
+            <span className="min-w-0 flex-1 truncate">{modelOptionLabel(config, model)}</span>
+            {price ? <span className="shrink-0 text-xs opacity-60">{price}</span> : null}
         </span>
     );
 }

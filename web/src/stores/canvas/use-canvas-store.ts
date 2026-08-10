@@ -3,6 +3,7 @@ import { persist, type PersistStorage, type StorageValue } from "zustand/middlew
 
 import { nanoid } from "nanoid";
 import i18n from "@/i18n";
+import { migrateLegacyCanvasProject, migrateLegacyCanvasProjects } from "@/lib/canvas/canvas-data-migration";
 import { localForageStorage } from "@/lib/localforage-storage";
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
 import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
@@ -35,22 +36,22 @@ type CanvasStore = {
 
 const initialViewport: ViewportTransform = { x: 0, y: 0, k: 1 };
 const CANVAS_STORE_KEY = "infinite-canvas:canvas_store";
+const CANVAS_STORE_VERSION = 1;
 type PersistedCanvasState = Pick<CanvasStore, "projects">;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
-let queuedPersistState: PersistedCanvasState | null = null;
+let queuedPersistValue: StorageValue<PersistedCanvasState> | null = null;
 
-const canvasStorage: PersistStorage<CanvasStore> = {
+const canvasStorage: PersistStorage<PersistedCanvasState> = {
     getItem: async (name) => {
         const value = await localForageStorage.getItem(name);
         if (!value) return null;
-        const parsed = JSON.parse(value) as StorageValue<CanvasStore>;
-        queuedPersistState = parsed.state as PersistedCanvasState;
+        const parsed = JSON.parse(value) as StorageValue<PersistedCanvasState>;
+        queuedPersistValue = parsed;
         return parsed;
     },
     setItem: (name, value) => {
-        const nextState = value.state as PersistedCanvasState;
-        if (queuedPersistState && queuedPersistState.projects === nextState.projects) return;
-        queuedPersistState = nextState;
+        if (queuedPersistValue && queuedPersistValue.version === value.version && queuedPersistValue.state.projects === value.state.projects) return;
+        queuedPersistValue = value;
         if (saveTimer) clearTimeout(saveTimer);
         saveTimer = setTimeout(() => {
             saveTimer = null;
@@ -86,7 +87,7 @@ export const useCanvasStore = create<CanvasStore>()(
             },
             importProject: (source) => {
                 const now = new Date().toISOString();
-                const project: CanvasProject = {
+                const project = migrateLegacyCanvasProject<CanvasProject>({
                     id: nanoid(),
                     title: source.title || i18n.t("canvas.project.imported"),
                     createdAt: source.createdAt || now,
@@ -98,7 +99,7 @@ export const useCanvasStore = create<CanvasStore>()(
                     backgroundMode: source.backgroundMode || "lines",
                     showImageInfo: source.showImageInfo || false,
                     viewport: source.viewport || initialViewport,
-                };
+                });
                 set((state) => ({ projects: [project, ...state.projects] }));
                 return project.id;
             },
@@ -114,7 +115,7 @@ export const useCanvasStore = create<CanvasStore>()(
                     const projects = state.projects.filter((project) => !ids.includes(project.id));
                     return { projects };
                 }),
-            replaceProjects: (projects) => set({ projects }),
+            replaceProjects: (projects) => set({ projects: migrateLegacyCanvasProjects(projects) }),
             updateProject: (id, patch) =>
                 set((state) => ({
                     projects: state.projects.map((project) => (project.id === id ? { ...project, ...patch, updatedAt: new Date().toISOString() } : project)),
@@ -123,10 +124,15 @@ export const useCanvasStore = create<CanvasStore>()(
         {
             name: CANVAS_STORE_KEY,
             storage: canvasStorage,
+            version: CANVAS_STORE_VERSION,
+            migrate: (persistedState) => {
+                const state = persistedState && typeof persistedState === "object" ? (persistedState as Partial<PersistedCanvasState>) : {};
+                return { ...state, projects: migrateLegacyCanvasProjects(Array.isArray(state.projects) ? state.projects : []) } as PersistedCanvasState;
+            },
             partialize: (state) =>
                 ({
                     projects: state.projects,
-                }) as StorageValue<CanvasStore>["state"],
+                }) as PersistedCanvasState,
             onRehydrateStorage: () => () => {
                 useCanvasStore.setState({ hydrated: true });
             },

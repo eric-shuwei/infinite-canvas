@@ -4,6 +4,7 @@ import i18n from "@/i18n";
 import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
 import { normalizePluginImages, runModelPlugin } from "./model-plugin";
 import { nanoid } from "nanoid";
+import { extractGeminiImageUrls, imageGenerationApiMode } from "@/lib/image-api-mode";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { imageToDataUrl } from "@/services/image-storage";
@@ -81,6 +82,7 @@ type GeminiPart = {
     inlineData?: { mimeType?: string; data?: string };
     inline_data?: { mime_type?: string; mimeType?: string; data?: string };
     fileData?: { mimeType?: string; fileUri?: string };
+    file_data?: { mime_type?: string; mimeType?: string; file_uri?: string; fileUri?: string };
     functionCall?: { id?: string; name?: string; args?: Record<string, unknown> };
     functionResponse?: { id?: string; name?: string; response?: Record<string, unknown> };
     thoughtSignature?: string;
@@ -699,16 +701,8 @@ async function requestGeminiImagesOnce(config: AiConfig, prompt: string, referen
 
 function parseGeminiImagePayload(payload: GeminiPayload) {
     validateGeminiPayload(payload);
-    const images =
-        payload.candidates
-            ?.flatMap((candidate) => candidate.content?.parts || [])
-            .map((part) => {
-                const inlineData = part.inlineData || (part.inline_data ? { mimeType: part.inline_data.mimeType || part.inline_data.mime_type, data: part.inline_data.data } : undefined);
-                if (inlineData?.data) return `data:${inlineData.mimeType || "image/png"};base64,${inlineData.data}`;
-                return part.fileData?.fileUri || null;
-            })
-            .filter((value): value is string => Boolean(value))
-            .map((dataUrl) => ({ id: nanoid(), dataUrl })) || [];
+    const parts = payload.candidates?.flatMap((candidate) => candidate.content?.parts || []) || [];
+    const images = extractGeminiImageUrls(parts).map((dataUrl) => ({ id: nanoid(), dataUrl }));
     if (!images.length) throw new Error(apiText("geminiNoImage"));
     return images;
 }
@@ -736,9 +730,10 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
             throw new Error(readAxiosError(error, apiText("requestFailed")));
         }
     }
-    if (requestConfig.apiFormat === "gemini") {
+    const apiMode = imageGenerationApiMode(requestConfig.model, requestConfig.apiFormat);
+    if (apiMode === "gemini") {
         try {
-            return await requestGeminiImages(requestConfig, prompt, [], n, options);
+            return await requestGeminiImages({ ...requestConfig, apiFormat: "gemini" }, prompt, [], n, options);
         } catch (error) {
             throw new Error(readAxiosError(error, apiText("requestFailed")));
         }
@@ -796,16 +791,17 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
             throw new Error(readAxiosError(error, apiText("requestFailed")));
         }
     }
-    if (requestConfig.apiFormat === "gemini") {
+    const apiMode = imageGenerationApiMode(requestConfig.model, requestConfig.apiFormat);
+    if (apiMode === "gemini") {
         if (mask) throw new Error(apiText("geminiMaskUnsupported"));
         try {
-            return await requestGeminiImages(requestConfig, requestPrompt, references, n, options);
+            return await requestGeminiImages({ ...requestConfig, apiFormat: "gemini" }, requestPrompt, references, n, options);
         } catch (error) {
             throw new Error(readAxiosError(error, apiText("requestFailed")));
         }
     }
 
-    if (requestConfig.apiFormat === "ark") {
+    if (apiMode === "ark") {
         if (mask) throw new Error(apiText("maskModelUnsupported"));
         const quality = normalizeQuality(config.quality);
         const requestSize = resolveRequestSize(quality, config.size);
