@@ -19,7 +19,7 @@ description: 当前版本已实现但仍需人工验证的变更项
 - 配置与用户偏好：每个模型渠道新增 OpenAI / Gemini 调用格式选择，默认 OpenAI，切换默认格式时同步更新默认 Base URL；渠道 Tab 增加紧凑醒目的提醒，说明模型是否可选需要到“模型”Tab 选择。
 - Gemini 调用格式：支持拉取 Gemini 模型列表，并用于文本问答、在线 Agent 工具调用、基础生图和图生图请求。
 - 混合生图路由：GPT Image 继续使用 OpenAI 图片接口，Nano Banana / Gemini Image 模型按模型名切换到原生 Gemini `generateContent`，需验证同一渠道同时配置两类模型时均可生成；Gemini 返回 Markdown data URL 时应正常保存为画布图片，失败节点需保留上游真实错误。
-- Gemini 生图：生图工作台和画布生图会把尺寸配置转换为 Gemini `responseFormat.image.aspectRatio` 传入，需验证 1:1、9:16、16:9 及自定义像素尺寸的输出比例。
+- Gemini 生图：生图工作台和画布生图会把尺寸配置转换为 Gemini `responseFormat.image.aspectRatio` 传入；修复 Gemini 支持比例表包含超长比例时，误把任意用户比例判定为超过 3:1 的问题，需验证 1:1、3:2、2:3、9:16、16:9 及自定义像素尺寸。
 - 音频和视频生成：选择 Gemini 调用格式时先给出不支持提示，仍需使用 OpenAI 兼容渠道。
 - Seedance 视频生成：OpenAI 兼容渠道统一通过 `/v1/videos` 创建和查询任务，仅火山方舟 Agent Plan 直连渠道使用 `/contents/generations/tasks`；单张参考图使用 `image`，多素材使用 `metadata.content`，提示词引用转换为 `@image1` / `@video1` / `@audio1`。需验证图生视频正确使用参考素材。
 - 视频生成进度：轮询任务时读取接口返回的 `progress`，并在视频创作台和画布视频节点展示真实百分比；接口未返回进度时继续只显示“生成中”。
