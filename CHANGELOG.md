@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-+ [同步] 以官方 `v0.15.1` 为新基线，保留阿里云部署、UseToken 默认渠道与价格展示、旧配置及旧多图画布迁移，以及 Nano Banana 同渠道 Gemini 兼容。
++ [新增] 提示词来源新增 Freestylefly GPT Image 2 内置来源。
++ [调整] 以官方 `v0.15.1` 为新基线，保留阿里云部署、UseToken 默认渠道与价格展示、旧配置及旧多图画布迁移，以及 Nano Banana 同渠道 Gemini 兼容。
 
 ## v0.15.1 - 2026-08-07
 
