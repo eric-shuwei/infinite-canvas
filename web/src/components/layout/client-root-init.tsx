@@ -1,16 +1,21 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef } from "react";
 import { App } from "antd";
+import { useTranslation } from "react-i18next";
 
 import { fetchChannelModels } from "@/services/api/image";
-import { createModelChannel, useConfigStore, withChannels } from "@/stores/use-config-store";
+import { createModelChannel, normalizeChannelModels, useConfigStore, withChannels, type AiConfig } from "@/stores/use-config-store";
+import { usePromptSourceScheduler } from "@/hooks/use-prompt-source-scheduler";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
     const { message } = App.useApp();
+    const { t } = useTranslation();
     const handledConfigParams = useRef(false);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const config = useConfigStore((state) => state.config);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
+
+    usePromptSourceScheduler();
 
     useEffect(() => {
         if (handledConfigParams.current) return;
@@ -28,62 +33,52 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
         window.history.replaceState(null, "", `${window.location.pathname}${searchParams.size ? `?${searchParams}` : ""}${window.location.hash}`);
         const firstChannel = config.channels[0];
         const importedChannels = apiKeys.length
-            ? apiKeys.map((item, index) =>
-                  createModelChannel({
-                      id: `imported-${index + 1}`,
-                      name: item.name,
-                      baseUrl: baseUrl || undefined,
-                      apiKey: item.apiKey,
-                  }),
-              )
+            ? apiKeys.map((item, index) => createModelChannel({ id: `imported-${index + 1}`, name: item.name, baseUrl: baseUrl || undefined, apiKey: item.apiKey }))
             : firstChannel
-            ? config.channels.map((channel, index) =>
-                  index === 0
-                      ? {
-                            ...channel,
-                            ...(baseUrl ? { baseUrl } : {}),
-                            ...(apiKey ? { apiKey } : {}),
-                      }
-                      : channel,
-              )
-            : [createModelChannel({ id: "default", name: "usetoken", baseUrl: baseUrl || undefined, apiKey: apiKey || "" })];
-        const importedChannelsToFetch = apiKeys.length ? importedChannels : importedChannels.slice(0, 1);
-        updateConfig("channels", importedChannels);
-        if (baseUrl) updateConfig("baseUrl", baseUrl);
-        if (apiKey) updateConfig("apiKey", apiKey);
+              ? config.channels.map((channel, index) =>
+                    index === 0
+                        ? {
+                              ...channel,
+                              ...(baseUrl ? { baseUrl } : {}),
+                              ...(apiKey ? { apiKey } : {}),
+                          }
+                        : channel,
+                )
+              : [createModelChannel({ id: "default", name: t("config.channels.defaultName"), baseUrl: baseUrl || undefined, apiKey: apiKey || "" })];
+        applyConfig(withChannels(config, importedChannels), updateConfig);
         openConfigDialog(false);
+        const importedChannelsToFetch = apiKeys.length ? importedChannels : importedChannels.slice(0, 1);
         if (!importedChannelsToFetch.some((channel) => channel.baseUrl.trim() && channel.apiKey.trim())) {
-            message.success("已导入本地直连配置");
+            message.success(t("config.importedDirectConfig"));
             return;
         }
-        void Promise.allSettled(
-            importedChannelsToFetch.map(async (channel) => [channel.id, await fetchChannelModels(channel)] as const),
-        ).then((results) => {
+        void Promise.allSettled(importedChannelsToFetch.map(async (channel) => [channel.id, await fetchChannelModels(channel)] as const)).then((results) => {
             const entries = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
             const failures = results.filter((result) => result.status === "rejected");
             if (entries.length) {
                 const currentConfig = useConfigStore.getState().config;
                 const modelMap = new Map(entries);
-                const channels = currentConfig.channels.map((channel) => (modelMap.has(channel.id) ? { ...channel, models: modelMap.get(channel.id) || [] } : channel));
-                const nextConfig = withChannels(currentConfig, channels);
-                (Object.keys(nextConfig) as Array<keyof typeof nextConfig>).forEach((key) => updateConfig(key, nextConfig[key]));
+                const channels = currentConfig.channels.map((channel) => (modelMap.has(channel.id) ? { ...channel, models: normalizeChannelModels(modelMap.get(channel.id)) } : channel));
+                applyConfig(withChannels(currentConfig, channels), updateConfig);
             }
             const modelCount = entries.reduce((total, [, models]) => total + models.length, 0);
-            if (!failures.length) {
-                message.success(`已导入配置并自动拉取 ${modelCount} 个模型`);
-                return;
-            }
             const firstError = failures[0]?.reason;
             const detail = firstError instanceof Error ? `：${firstError.message}` : "";
-            if (entries.length) {
-                message.warning(`已导入配置并拉取 ${modelCount} 个模型，${failures.length} 个渠道失败${detail}`);
+            if (!failures.length) {
+                message.success(t("config.importedDirectConfigWithModels", { count: modelCount }));
+            } else if (entries.length) {
+                message.warning(t("config.importedDirectConfigPartial", { count: modelCount, failures: failures.length, detail }));
             } else {
-                message.error(`配置已导入，但模型拉取失败${detail}`);
+                message.error(t("config.importedDirectConfigModelFailure", { detail }));
             }
         });
-    }, [config.channels, message, openConfigDialog, updateConfig]);
+    }, [config.channels, message, openConfigDialog, t, updateConfig]);
 
     return <>{children}</>;
+}
+
+function applyConfig(config: AiConfig, updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void) {
+    (Object.keys(config) as Array<keyof AiConfig>).forEach((key) => updateConfig(key, config[key]));
 }
 
 function parseImportedApiKeys(value: string | null): Array<{ name: string; apiKey: string }> {

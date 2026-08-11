@@ -1,11 +1,13 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { Cpu } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
+import i18n from "@/i18n";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { useModelPricing } from "@/hooks/use-model-pricing";
-import { formatModelPrice, resolveModelPricing } from "@/lib/model-pricing";
+import { formatModelPrice, resolveModelPricing, type ChannelPricingMap } from "@/lib/model-pricing";
 import { cn } from "@/lib/utils";
-import { modelOptionLabel, modelOptionName, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { modelCapabilityOf, modelOptionLabel, modelOptionName, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 
 type ModelPickerProps = {
     config: AiConfig;
@@ -18,14 +20,15 @@ type ModelPickerProps = {
     onMissingConfig?: () => void;
 };
 
-export function ModelPicker({ config, value, onChange, capability, className, fullWidth = false, placeholder = "选择模型", onMissingConfig }: ModelPickerProps) {
+export function ModelPicker({ config, value, onChange, capability, className, fullWidth = false, placeholder, onMissingConfig }: ModelPickerProps) {
+    const { t } = useTranslation();
     const pickerId = useId();
     const [open, setOpen] = useState(false);
     const { data: pricing = {} } = useModelPricing(config);
     const options = useMemo(() => Array.from(new Set([...(config.channelMode === "local" && !capability ? [value] : []), ...selectableModelsByCapability(config, capability)].filter((model): model is string => Boolean(model)))), [capability, config, value]);
     const current = value || "";
-    const currentPricing = resolveModelPricing(config, current, pricing);
-    const currentPrice = formatModelPrice(currentPricing, capability);
+    const pickerPlaceholder = placeholder || t("settingsPanels.model.select");
+    const currentPrice = formatModelPrice(resolveModelPricing(config, current, pricing), capability || modelCapabilityOf(config, current));
 
     useEffect(() => {
         const closeOtherPicker = (event: Event) => {
@@ -55,11 +58,11 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
                 )}
                 onMouseDown={(event) => event.stopPropagation()}
                 onPointerDown={(event) => event.stopPropagation()}
-                title={current ? [modelOptionLabel(config, current), currentPrice, currentPricing?.description].filter(Boolean).join(" · ") : placeholder}
+                title={current ? modelOptionLabel(config, current) : pickerPlaceholder}
             >
                 <ModelIcon model={current} />
-                <span className="canvas-model-picker-text min-w-0 flex-1 truncate text-left">{current ? modelOptionLabel(config, current) : placeholder}</span>
-                {currentPrice ? <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{currentPrice}</span> : null}
+                <span className="canvas-model-picker-text min-w-0 flex-1 truncate text-left">{current ? modelOptionLabel(config, current) : pickerPlaceholder}</span>
+                {currentPrice ? <span className="shrink-0 text-[11px] opacity-60">· {currentPrice}</span> : null}
             </SelectTrigger>
             <SelectContent
                 data-canvas-no-zoom
@@ -72,14 +75,11 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
                 onMouseDown={(event) => event.stopPropagation()}
             >
                 {options.length ? (
-                    options.map((model) => {
-                        const modelPricing = resolveModelPricing(config, model, pricing);
-                        return (
-                            <SelectItem key={model} value={model} textValue={[modelOptionLabel(config, model), modelPricing?.description].filter(Boolean).join(" ")}>
-                                <ModelLabel config={config} model={model} capability={capability} pricing={modelPricing} />
-                            </SelectItem>
-                        );
-                    })
+                    options.map((model) => (
+                        <SelectItem key={model} value={model} textValue={modelOptionLabel(config, model)}>
+                            <ModelLabel config={config} model={model} pricing={pricing} />
+                        </SelectItem>
+                    ))
                 ) : (
                     <SelectItem value="__empty__" disabled>
                         {emptyModelLabel(config, capability)}
@@ -91,25 +91,18 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
 }
 
 function emptyModelLabel(config: AiConfig, capability?: ModelCapability) {
-    const label = capability === "image" ? "生图" : capability === "video" ? "视频" : capability === "text" ? "文本" : capability === "audio" ? "音频" : "";
-    if (capability && config.models.length) return "请先在上方配置可选模型";
-    return config.models.length ? `暂无匹配的${label}模型` : "请先到配置里添加渠道和模型";
+    const label = capability ? i18n.t(`settingsPanels.model.capabilities.${capability}`) : "";
+    if (capability && config.models.length) return i18n.t("settingsPanels.model.assign", { capability: label });
+    return config.models.length ? i18n.t("settingsPanels.model.noMatch", { capability: label }) : i18n.t("settingsPanels.model.addFirst");
 }
 
-function ModelLabel({ config, model, capability, pricing }: { config: AiConfig; model: string; capability?: ModelCapability; pricing?: ReturnType<typeof resolveModelPricing> }) {
-    const price = formatModelPrice(pricing, capability);
+function ModelLabel({ config, model, pricing }: { config: AiConfig; model: string; pricing: ChannelPricingMap }) {
+    const price = formatModelPrice(resolveModelPricing(config, model, pricing), modelCapabilityOf(config, model));
     return (
-        <span className="flex min-w-0 items-start gap-2 py-0.5">
-            <span className="pt-0.5">
-                <ModelIcon model={model} />
-            </span>
-            <span className="min-w-0 flex-1">
-                <span className="flex min-w-0 items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate">{modelOptionLabel(config, model)}</span>
-                    {price ? <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{price}</span> : null}
-                </span>
-                {pricing?.description ? <span className="mt-0.5 block line-clamp-2 text-xs leading-4 text-muted-foreground">{pricing.description}</span> : null}
-            </span>
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+            <ModelIcon model={model} />
+            <span className="min-w-0 flex-1 truncate">{modelOptionLabel(config, model)}</span>
+            {price ? <span className="shrink-0 text-xs opacity-60">{price}</span> : null}
         </span>
     );
 }

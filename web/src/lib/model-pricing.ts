@@ -16,7 +16,7 @@ export function formatModelPrice(model: ModelPricing | undefined, capability?: M
     if (!model || model.quota_type !== 1) return "";
     if (model.billing_mode === "tiered_expr" || model.billing_expr?.trim()) return "动态计费";
     if (!Number.isFinite(model.model_price) || model.model_price <= 0) return "";
-    const unit = capability === "image" ? "/张" : capability === "video" ? "/秒" : capability === "audio" ? "/次" : "/次";
+    const unit = capability === "image" ? "/张" : capability === "video" ? "/秒" : "/次";
     return `¥${formatPriceNumber(model.model_price)}${unit}`;
 }
 

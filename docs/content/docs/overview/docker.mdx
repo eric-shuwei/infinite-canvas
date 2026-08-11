@@ -1,13 +1,11 @@
 ---
-title: Docker 部署
-description: 使用 Docker Compose 部署无限画布
+title: Docker Deployment
+description: Deploy Infinite Canvas with Docker Compose
 ---
 
-# Docker 部署
+# Docker Deployment
 
-如果你希望在自己的机器或服务器上运行项目，可以直接使用 Docker Compose。
-
-## 使用发布镜像
+## Use the published image
 
 ```bash
 git clone git@github.com:basketikun/infinite-canvas.git
@@ -15,55 +13,50 @@ cd infinite-canvas
 docker compose up -d
 ```
 
-启动后访问：
+Open `http://localhost:3000`.
 
-```text
-http://localhost:3000
-```
-
-## 本地构建镜像
-
-如果需要基于当前源码构建镜像：
+## Build locally
 
 ```bash
 docker compose -f docker-compose.local.yml up -d --build
 ```
 
-## GitHub Actions 自动部署到阿里云
+## Documentation image
 
-仓库内的 `Deploy to Aliyun` workflow 会在 `main` 分支收到推送后，在 GitHub Actions 构建 amd64 Docker 镜像并推送到 GHCR，再通过 SSH 通知服务器拉取本次提交对应的镜像并重启容器。
-
-服务器需要提前安装 Docker 和 curl，并允许部署用户执行 Docker 命令。容器默认监听服务器本机的 `127.0.0.1:3001`，可以再通过 Nginx 反向代理到正式域名。
-
-在 GitHub 仓库的 `Settings -> Secrets and variables -> Actions` 中配置：
-
-- Secret `ALIYUN_HOST`：服务器公网 IP 或域名。
-- Secret `ALIYUN_USER`：SSH 登录用户。
-- Secret `ALIYUN_PORT`：SSH 端口，不配置时使用 `22`。
-- Secret `ALIYUN_SSH_PRIVATE_KEY`：用于登录服务器的 SSH 私钥完整内容。
-- Secret `ALIYUN_SSH_KNOWN_HOSTS`：在可信环境执行 `ssh-keyscan -H <服务器地址>` 得到的服务器公钥记录。
-- Variable `ALIYUN_APP_PORT`：可选，服务器本机监听端口，不配置时使用 `3001`。
-
-对应 SSH 公钥需要写入服务器部署用户的 `~/.ssh/authorized_keys`。部署脚本会检查新容器是否可访问；检查失败时会恢复部署前使用的镜像。配置完成后，可以推送到 `main`，或在 GitHub Actions 页面手动运行 `Deploy to Aliyun`。
-
-## 文档站镜像
-
-文档站位于 `docs/` 目录，按带服务端能力的 Next.js standalone 应用单独构建，不打进主应用镜像。
-
-使用发布镜像：
+The documentation in `docs/` is a separate Next.js standalone application with server capabilities.
 
 ```bash
 cd docs
 docker compose up -d
 ```
 
-基于当前源码本地构建：
+To build it from the current source:
 
 ```bash
 cd docs
 docker compose -f docker-compose.local.yml up -d --build
 ```
 
-## 数据说明
+The main application container only runs Next.js. Canvases, My Assets, generation history, and API keys are stored in the browser by default, while prompt repositories are fetched directly by the frontend. No persistent data volume is required for this data.
 
-当前主应用镜像只启动 Next.js。画布、我的素材、生成记录和 AI API Key 默认保存在浏览器本地；第三方提示词由浏览器前端直连拉取，不需要额外挂载数据目录。
+## Optional analytics
+
+No analytics are enabled by default. A deployment can enable GA4, Baidu Analytics, or both at runtime:
+
+| Variable | Description |
+| --- | --- |
+| `ANALYTICS_GA4_ID` | Google Analytics 4 measurement ID (`G-XXXX`) |
+| `ANALYTICS_BAIDU_ID` | Baidu site ID, the hash after `hm.js?` |
+
+```yaml
+services:
+  app:
+    image: ghcr.io/basketikun/infinite-canvas:latest
+    ports:
+      - "3000:3000"
+    environment:
+      ANALYTICS_GA4_ID: G-XXXXXXXXXX
+      ANALYTICS_BAIDU_ID: e8263761cc5c32f5f7a855b8203b965a
+```
+
+SPA route changes automatically report page views to enabled providers. Only configure analytics IDs on sites you control, and do not commit them to the repository.
