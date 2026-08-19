@@ -1,4 +1,4 @@
-export type ImageGenerationApiMode = "openai" | "gemini" | "ark";
+export type ImageGenerationApiMode = "openai" | "gemini";
 
 type GeminiImagePart = {
     text?: string;
