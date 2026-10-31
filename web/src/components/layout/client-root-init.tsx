@@ -4,15 +4,14 @@ import { App } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { fetchChannelModels } from "@/services/api/image";
-import { createModelChannel, normalizeChannelModels, useConfigStore, withChannels, type AiConfig } from "@/stores/use-config-store";
+import { createModelChannel, normalizeChannelModels, useConfigStore, withChannels, type ModelChannel } from "@/stores/use-config-store";
 import { usePromptSourceScheduler } from "@/hooks/use-prompt-source-scheduler";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
     const { message } = App.useApp();
     const { t } = useTranslation();
     const handledConfigParams = useRef(false);
-    const updateConfig = useConfigStore((state) => state.updateConfig);
-    const config = useConfigStore((state) => state.config);
+    const importChannelCredentials = useConfigStore((state) => state.importChannelCredentials);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
 
     usePromptSourceScheduler();
@@ -31,24 +30,25 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
         searchParams.delete("apikey");
         searchParams.delete("apiKeys");
         window.history.replaceState(null, "", `${window.location.pathname}${searchParams.size ? `?${searchParams}` : ""}${window.location.hash}`);
-        const firstChannel = config.channels[0];
-        const importedChannels = apiKeys.length
-            ? apiKeys.map((item, index) => createModelChannel({ id: `imported-${index + 1}`, name: item.name, baseUrl: baseUrl || undefined, apiKey: item.apiKey }))
-            : firstChannel
-              ? config.channels.map((channel, index) =>
-                    index === 0
-                        ? {
-                              ...channel,
-                              ...(baseUrl ? { baseUrl } : {}),
-                              ...(apiKey ? { apiKey } : {}),
-                          }
-                        : channel,
-                )
-              : [createModelChannel({ id: "default", name: t("config.channels.defaultName"), baseUrl: baseUrl || undefined, apiKey: apiKey || "" })];
-        applyConfig(withChannels(config, importedChannels), updateConfig);
-        openConfigDialog(false);
-        const importedChannelsToFetch = apiKeys.length ? importedChannels : importedChannels.slice(0, 1);
-        if (!importedChannelsToFetch.some((channel) => channel.baseUrl.trim() && channel.apiKey.trim())) {
+        let importedChannels: ModelChannel[];
+        if (apiKeys.length) {
+            const currentConfig = useConfigStore.getState().config;
+            importedChannels = apiKeys.map((item, index) => createModelChannel({ id: `imported-${index + 1}`, name: item.name, baseUrl: baseUrl || undefined, apiKey: item.apiKey }));
+            const importedIds = new Set(importedChannels.map((channel) => channel.id));
+            const channels = [...currentConfig.channels.filter((channel) => !importedIds.has(channel.id)), ...importedChannels];
+            useConfigStore.setState({ config: withChannels(currentConfig, channels) });
+        } else {
+            const result = importChannelCredentials({ baseUrl, apiKey });
+            if (!result.channelId) {
+                openConfigDialog(false, "channels");
+                message.error(t(result.status === "missing-base-url" ? "config.importedChannelBaseUrlRequired" : "config.importedChannelBaseUrlInvalid"));
+                return;
+            }
+            importedChannels = useConfigStore.getState().config.channels.filter((channel) => channel.id === result.channelId);
+        }
+        openConfigDialog(false, "channels");
+        const importedChannelsToFetch = importedChannels.filter((channel) => channel.baseUrl.trim() && channel.apiKey.trim());
+        if (!importedChannelsToFetch.length) {
             message.success(t("config.importedDirectConfig"));
             return;
         }
@@ -58,8 +58,11 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
             if (entries.length) {
                 const currentConfig = useConfigStore.getState().config;
                 const modelMap = new Map(entries);
-                const channels = currentConfig.channels.map((channel) => (modelMap.has(channel.id) ? { ...channel, models: normalizeChannelModels(modelMap.get(channel.id)) } : channel));
-                applyConfig(withChannels(currentConfig, channels), updateConfig);
+                const channels = currentConfig.channels.map((channel) => {
+                    const imported = importedChannelsToFetch.find((item) => item.id === channel.id);
+                    return modelMap.has(channel.id) && imported?.baseUrl === channel.baseUrl && imported.apiKey === channel.apiKey ? { ...channel, models: normalizeChannelModels(modelMap.get(channel.id)) } : channel;
+                });
+                useConfigStore.setState({ config: withChannels(currentConfig, channels) });
             }
             const modelCount = entries.reduce((total, [, models]) => total + models.length, 0);
             const firstError = failures[0]?.reason;
@@ -72,13 +75,9 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
                 message.error(t("config.importedDirectConfigModelFailure", { detail }));
             }
         });
-    }, [config.channels, message, openConfigDialog, t, updateConfig]);
+    }, [importChannelCredentials, message, openConfigDialog, t]);
 
     return <>{children}</>;
-}
-
-function applyConfig(config: AiConfig, updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void) {
-    (Object.keys(config) as Array<keyof AiConfig>).forEach((key) => updateConfig(key, config[key]));
 }
 
 function parseImportedApiKeys(value: string | null): Array<{ name: string; apiKey: string }> {
